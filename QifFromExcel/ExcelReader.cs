@@ -42,6 +42,17 @@ public class ExcelReader : IDisposable
             if (!string.IsNullOrEmpty(label))
                 _colIndex[label] = cell.WorksheetColumn().ColumnNumber();
         }
+
+        // Add "Exportado em" column to the table if it doesn't exist yet
+        if (!_colIndex.ContainsKey(ColExported))
+        {
+            _table.InsertColumnsAfter(1);
+            var newHeaderCell = _table.HeadersRow().LastCell();
+            newHeaderCell.Value = ColExported;
+            _colIndex[ColExported] = newHeaderCell.WorksheetColumn().ColumnNumber();
+            _workbook.Save();
+            Console.WriteLine($"Added '{ColExported}' column to the Money table.");
+        }
     }
 
     private IXLCell DataCell(IXLRangeRow row, string columnName)
