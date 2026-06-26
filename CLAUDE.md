@@ -2,7 +2,9 @@
 
 ## Project Purpose
 
-A C# routine integrated into an Excel-based financial transaction app that generates OFX files from an Excel table for import into Microsoft Money (or compatible apps).
+A C# console app that reads an Excel-based financial transaction table and generates QIF files for import into Microsoft Money.
+
+> **Note:** Microsoft Money exports QIF (not OFX) and imports both QIF and OFX. We target QIF because it is simpler and we have a validated sample export from Money to work against.
 
 ## Workflow
 
@@ -122,33 +124,69 @@ Build MEMO as: `Category:Sub-Category - free memo text`
 
 For foreign-currency transactions: `EUR 5,10 Category:Sub-Category - free memo text`
 
+## Excel Table Schema
+
+File: `Recibos para o Money.xlsx`, Sheet: `Sheet1`, Table name: `Money` (A:I)
+
+| Column | Header | QIF field | Notes |
+|--------|--------|-----------|-------|
+| A | Data | D | Date posted |
+| B | Estabelecimento | P | Payee |
+| C | Valor | T | Amount — positive in Excel = debit; code multiplies by -1 |
+| D | Moeda | — | Currency code (BRL default; EUR/USD etc. triggers conversion) |
+| E | Cartão | — | Card name; user selects which card to export each run |
+| F | Categoria | L | QIF category |
+| G | Sub-Cat | L | QIF subcategory (appended as `Category:Subcategory`) |
+| H | Memo | M | Free text memo |
+| I | Exportado em | — | Datetime stamp written by the app after export; null = unprocessed |
+
+## QIF Format Reference
+
+```
+!Type:Bank
+D26/06'2026
+T-999.99
+PPayee name
+MMemo text
+LCategory:Subcategory
+^
+```
+
+- Date format: `DD/MM'YYYY`
+- Amount: negative = debit, positive = credit
+- `^` separates records
+- Multi-currency memo prefix: `EUR 5,10 - original memo text`
+
 ## Project Structure
 
 ```
 OFXfromExcel/
-├── CLAUDE.md               # This file
-├── OFXfromExcel.sln        # Visual Studio solution (to be created)
-├── OFXfromExcel/           # C# class library project
-│   ├── OFXGenerator.cs     # Core OFX file generation logic
-│   ├── ExcelReader.cs      # Reads and marks rows in Excel table
-│   ├── CurrencyConverter.cs # Exchange rate prompting and caching
-│   └── Models/
-│       ├── Transaction.cs  # Domain model for one row
-│       └── ExchangeRateWindow.cs
-└── Tests/                  # Unit test project (optional)
+├── CLAUDE.md
+├── Recibos para o Money - cópia teste.xlsx   # sample workbook (git-tracked)
+├── Teste Geração OFX com Claude 1.qif        # sample QIF export from Money
+└── QifFromExcel/                             # C# console app (.NET 8)
+    ├── QifFromExcel.csproj                   # ClosedXML dependency
+    ├── Program.cs                            # Entry point; CONFIGURATION constants at top
+    ├── ExcelReader.cs                        # Reads Money table, marks exported rows
+    ├── QifGenerator.cs                       # Builds QIF string from transactions
+    ├── ExchangeRateCache.cs                  # Prompts for rates, caches 60 days in .rates.json
+    └── Models/
+        └── Transaction.cs                    # Domain model for one row
+```
+
+## Configuration (Program.cs top)
+
+Two constants control file paths — change these to match the production file locations:
+
+```csharp
+const string ExcelFilePath = @"C:\Users\euben\...\Recibos para o Money.xlsx";
+const string OutputFolder  = @"C:\Users\euben\...\Gerando OFX";
 ```
 
 ## Development Notes
 
-- Target: .NET Framework or .NET 8 (confirm with Excel interop requirements)
-- Excel integration: likely via Excel-DNA or VSTO; the C# code is invoked from VBA or a ribbon button
-- OFX encoding: write files as Windows-1252 (CHARSET:1252) to match the header
-- FITID generation: use `{date:yyyyMMdd}{row_index:000}` to guarantee uniqueness within a file
-- The generated `.ofx` file should be saved to a user-chosen path, then the user manually imports it into Microsoft Money
-
-## Pending Verification
-
-- [ ] Confirm exact OFX structure Microsoft Money expects by examining a sample export
-- [ ] Confirm TRNTYPE mapping from Category/Sub-Category values in the Excel table
-- [ ] Confirm how the "processed" flag is stored in Excel (column value, cell color, etc.)
-- [ ] Confirm Excel interop approach (Excel-DNA add-in vs. standalone .exe vs. VSTO)
+- Runtime: .NET 8 console app — run with `dotnet run` or publish as a single `.exe`
+- Excel library: ClosedXML (MIT licence) — no licence prompt on commercial use
+- Exchange rates cached in `<ExcelFile>.rates.json` next to the workbook; refreshed after 60 days
+- Output filename pattern: `[Card]yyyyMMdd-HHmm.qif`
+- The same timestamp written to the output filename is stamped into column I of the exported rows
