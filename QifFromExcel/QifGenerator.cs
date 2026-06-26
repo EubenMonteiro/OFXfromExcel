@@ -21,7 +21,7 @@ public static class QifGenerator
 
             string memo = BuildMemo(tx);
 
-            sb.AppendLine($"D{tx.Date:dd/MM'yyyy}");
+            sb.AppendLine($"D{tx.Date.ToString(@"dd/MM\'yyyy")}");
             sb.AppendLine($"T{qifAmount.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)}");
             sb.AppendLine($"P{tx.Payee}");
             if (!string.IsNullOrEmpty(memo))
