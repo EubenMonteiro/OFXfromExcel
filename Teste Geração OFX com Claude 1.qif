@@ -1,0 +1,19 @@
+!Type:Bank
+D26/06'2026
+T0.00
+CX
+POpening Balance
+L[Checking]
+^
+D26/06'2026
+MMemo
+T-999.99
+PPayee
+LCategory:Subcategory
+^
+D27/06'2026
+MMemo 2
+T-998.88
+PPayee2
+LCategory:Subcategory
+^
