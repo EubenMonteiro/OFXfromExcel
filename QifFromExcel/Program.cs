@@ -2,8 +2,10 @@ using QifFromExcel;
 
 // ─── CONFIGURATION ────────────────────────────────────────────────────────────
 // Full path to the Excel workbook containing the "Money" table.
+// TEST: pointing at the test copy in the repo folder.
+// PRODUCTION: change to @"C:\Users\euben\OneDrive - Euben Silveira Monteiro Junior ME\Pessoal novo\Money\Recibos para o Money.xlsx"
 const string ExcelFilePath =
-    @"C:\Users\euben\OneDrive - Euben Silveira Monteiro Junior ME\Pessoal novo\Money\Recibos para o Money.xlsx";
+    @"C:\Users\euben\OneDrive - Euben Silveira Monteiro Junior ME\Pessoal novo\Money\Gerando OFX\ofxfromexcel\Recibos para o Money - cópia teste.xlsx";
 
 // Folder where QIF files are written. File name: [Card]yyyyMMdd-HHmm.qif
 const string OutputFolder =
