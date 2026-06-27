@@ -60,7 +60,7 @@ try
     }
 
     // 3. Load unexported transactions
-    IReadOnlyList<Models.Transaction> transactions;
+    IReadOnlyList<Transaction> transactions;
     if (accountCurrency == "BRL")
     {
         // BRL account: export all currencies, convert to BRL
