@@ -14,6 +14,7 @@ const string OutputFolder =
 
 try
 {
+    System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
     Console.OutputEncoding = System.Text.Encoding.UTF8;
 
     using var reader = new ExcelReader(ExcelFilePath);
@@ -59,7 +60,7 @@ try
     string fileName = $"{safeCard}{exportedAt:yyyyMMdd-HHmm}.qif";
     string outputPath = Path.Combine(OutputFolder, fileName);
 
-    File.WriteAllText(outputPath, qifContent, System.Text.Encoding.UTF8);
+    File.WriteAllText(outputPath, qifContent, System.Text.Encoding.GetEncoding(1252));
     Console.WriteLine($"\nQIF file written: {outputPath}");
 
     // 5. Mark rows as exported in Excel
