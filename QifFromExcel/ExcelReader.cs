@@ -62,7 +62,7 @@ public class ExcelReader : IDisposable
             .ToList();
     }
 
-    public IReadOnlyList<Transaction> GetUnexported(string card)
+    public IReadOnlyList<Transaction> GetUnexported(string card, string? currencyFilter = null)
     {
         var result = new List<Transaction>();
 
@@ -74,6 +74,12 @@ public class ExcelReader : IDisposable
 
             var cardVal = DataCell(row, ColCard).GetString().Trim();
             if (!string.Equals(cardVal, card, StringComparison.OrdinalIgnoreCase)) continue;
+
+            if (currencyFilter != null)
+            {
+                var currency = DataCell(row, ColCurrency).GetString().Trim().ToUpperInvariant();
+                if (!string.Equals(currency, currencyFilter, StringComparison.OrdinalIgnoreCase)) continue;
+            }
 
             result.Add(new Transaction
             {

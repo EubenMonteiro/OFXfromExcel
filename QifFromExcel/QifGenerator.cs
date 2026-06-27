@@ -5,30 +5,49 @@ namespace QifFromExcel;
 
 public static class QifGenerator
 {
-    public static string Generate(IReadOnlyList<Transaction> transactions, ExchangeRateCache rateCache)
+    public static string Generate(
+        IReadOnlyList<Transaction> transactions,
+        ExchangeRateCache rateCache,
+        string accountCurrency)
     {
-        // Build rate lookups per foreign currency (date → BRL rate)
-        var rateLookups = transactions
-            .Where(t => t.Currency != "BRL")
-            .GroupBy(t => t.Currency)
-            .ToDictionary(
-                g => g.Key,
-                g => rateCache.BuildRateLookup(g.Key, g.Select(t => t.Date))
-            );
+        bool isBrlAccount = accountCurrency == "BRL";
+
+        // For BRL accounts: build rate lookups per foreign currency (date → rate)
+        Dictionary<string, Dictionary<DateTime, decimal>> rateLookups = new();
+        if (isBrlAccount)
+        {
+            rateLookups = transactions
+                .Where(t => t.Currency != "BRL")
+                .GroupBy(t => t.Currency)
+                .ToDictionary(
+                    g => g.Key,
+                    g => rateCache.BuildRateLookup(g.Key, g.Select(t => t.Date))
+                );
+        }
 
         var sb = new StringBuilder();
         sb.AppendLine("!Type:Bank");
 
         foreach (var tx in transactions)
         {
-            decimal brlAmount = tx.Currency == "BRL"
-                ? tx.Amount
-                : tx.Amount * rateLookups[tx.Currency][tx.Date];
+            decimal qifAmount;
+            string memo;
 
-            // Positive in Excel = debit on card = negative in QIF
-            decimal qifAmount = -brlAmount;
+            if (isBrlAccount)
+            {
+                decimal brlAmount = tx.Currency == "BRL"
+                    ? tx.Amount
+                    : tx.Amount * rateLookups[tx.Currency][tx.Date];
 
-            string memo = BuildMemo(tx);
+                qifAmount = -brlAmount; // positive in Excel = debit on card = negative in QIF
+                memo = BuildMemo(tx, prependForeignAmount: tx.Currency != "BRL");
+            }
+            else
+            {
+                // Foreign currency account: amounts are already in the account currency, no conversion
+                qifAmount = -tx.Amount;
+                memo = BuildMemo(tx, prependForeignAmount: false);
+            }
 
             sb.AppendLine($"D{tx.Date.ToString(@"dd/MM\'yyyy")}");
             sb.AppendLine($"T{qifAmount.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)}");
@@ -44,11 +63,11 @@ public static class QifGenerator
         return sb.ToString();
     }
 
-    private static string BuildMemo(Transaction tx)
+    private static string BuildMemo(Transaction tx, bool prependForeignAmount)
     {
         var parts = new List<string>();
 
-        if (tx.Currency != "BRL")
+        if (prependForeignAmount)
         {
             string foreignAmount = tx.Amount.ToString("N2", new System.Globalization.CultureInfo("pt-BR"));
             parts.Add($"{tx.Currency} {foreignAmount}");

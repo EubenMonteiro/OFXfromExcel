@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using QifFromExcel;
 
 // ─── CONFIGURATION ────────────────────────────────────────────────────────────
@@ -7,7 +8,7 @@ using QifFromExcel;
 const string ExcelFilePath =
     @"C:\Users\euben\OneDrive - Euben Silveira Monteiro Junior ME\Pessoal novo\Money\Gerando OFX\ofxfromexcel\Recibos para o Money - cópia teste.xlsx";
 
-// Folder where QIF files are written. File name: [Card]yyyyMMdd-HHmm.qif
+// Folder where QIF files are written.
 const string OutputFolder =
     @"C:\Users\euben\OneDrive - Euben Silveira Monteiro Junior ME\Pessoal novo\Money\Gerando OFX";
 // ──────────────────────────────────────────────────────────────────────────────
@@ -40,30 +41,78 @@ try
     }
     string selectedCard = cards[choice - 1];
 
-    // 2. Load unexported transactions for that card
-    var transactions = reader.GetUnexported(selectedCard);
+    // 2. Determine account currency
+    // Check if the card name already contains a currency code (e.g. "Avenue USD")
+    string? impliedCurrency = DetectCurrencyInName(selectedCard);
+    string accountCurrency;
+
+    if (impliedCurrency != null)
+    {
+        Console.WriteLine($"\nCard name suggests currency: {impliedCurrency}. Using it as the account currency.");
+        accountCurrency = impliedCurrency;
+    }
+    else
+    {
+        Console.Write("\nAccount base currency (press Enter for BRL, or type EUR / USD / etc.): ");
+        var input = Console.ReadLine()?.Trim().ToUpperInvariant() ?? "";
+        accountCurrency = string.IsNullOrEmpty(input) ? "BRL" : input;
+    }
+
+    // 3. Load unexported transactions
+    IReadOnlyList<Models.Transaction> transactions;
+    if (accountCurrency == "BRL")
+    {
+        // BRL account: export all currencies, convert to BRL
+        transactions = reader.GetUnexported(selectedCard);
+    }
+    else
+    {
+        // Foreign currency account: only export rows in that currency
+        var allForCard = reader.GetUnexported(selectedCard);
+
+        // Warn if card name implies a different currency than what the user typed
+        if (impliedCurrency == null)
+        {
+            var otherCurrencies = allForCard
+                .Where(t => t.Currency != accountCurrency)
+                .Select(t => t.Currency)
+                .Distinct()
+                .ToList();
+            if (otherCurrencies.Count > 0)
+                Console.WriteLine($"Warning: {otherCurrencies.Count} transaction(s) in other currencies " +
+                                  $"({string.Join(", ", otherCurrencies)}) will be skipped — " +
+                                  $"they belong in a BRL export run.");
+        }
+
+        transactions = allForCard.Where(t => t.Currency == accountCurrency).ToList();
+    }
+
     if (transactions.Count == 0)
     {
-        Console.WriteLine($"No unexported transactions found for '{selectedCard}'.");
+        Console.WriteLine($"No unexported transactions found for '{selectedCard}'" +
+                          (accountCurrency != "BRL" ? $" in {accountCurrency}" : "") + ".");
         return;
     }
 
-    Console.WriteLine($"\nFound {transactions.Count} unexported transaction(s) for '{selectedCard}'.");
+    Console.WriteLine($"\nFound {transactions.Count} unexported transaction(s) for '{selectedCard}'" +
+                      (accountCurrency != "BRL" ? $" in {accountCurrency}" : " (all currencies)") + ".");
 
-    // 3. Generate QIF content (exchange rate prompts happen here for non-BRL rows)
-    string qifContent = QifGenerator.Generate(transactions, rateCache);
+    // 4. Generate QIF
+    string qifContent = QifGenerator.Generate(transactions, rateCache, accountCurrency);
 
-    // 4. Write QIF file
+    // 5. Write QIF file
     Directory.CreateDirectory(OutputFolder);
     var exportedAt = DateTime.Now;
     string safeCard = string.Concat(selectedCard.Split(Path.GetInvalidFileNameChars()));
-    string fileName = $"{safeCard}{exportedAt:yyyyMMdd-HHmm}.qif";
+    string fileName = accountCurrency == "BRL"
+        ? $"{safeCard}{exportedAt:yyyyMMdd-HHmm}.qif"
+        : $"{safeCard} - {accountCurrency} - {exportedAt:yyyyMMdd-HHmm}.qif";
     string outputPath = Path.Combine(OutputFolder, fileName);
 
     File.WriteAllText(outputPath, qifContent, System.Text.Encoding.GetEncoding(1252));
     Console.WriteLine($"\nQIF file written: {outputPath}");
 
-    // 5. Mark rows as exported in Excel
+    // 6. Mark rows as exported in Excel
     reader.MarkExported(transactions, exportedAt);
     Console.WriteLine("Excel rows marked as exported.");
 
@@ -76,4 +125,14 @@ catch (Exception ex)
     Console.Error.WriteLine(ex.StackTrace);
     Console.WriteLine("\nPress any key to exit.");
     Console.ReadKey();
+}
+
+// Looks for a 3-letter uppercase currency code at the end of the card name (e.g. "Avenue USD")
+static string? DetectCurrencyInName(string cardName)
+{
+    var match = Regex.Match(cardName, @"\b([A-Z]{3})\s*$");
+    if (!match.Success) return null;
+    string candidate = match.Groups[1].Value;
+    // Exclude common non-currency suffixes that happen to be 3 letters
+    return candidate == "BRL" ? null : candidate;
 }
