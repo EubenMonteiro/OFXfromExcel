@@ -1,17 +1,19 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace QifFromExcel;
 
 /// <summary>
-/// Persists exchange rates to a JSON file next to the Excel workbook.
-/// A cached rate is reused for 60 days before the user is re-prompted.
+/// Caches exchange rates keyed by currency + 60-day transaction window.
+/// A window starts at the earliest transaction date in a group and spans 60 days.
+/// The user is prompted once per window; the rate is stored with its exact date range.
 /// </summary>
 public class ExchangeRateCache
 {
-    private const int CacheWindowDays = 60;
+    private const int WindowDays = 60;
 
     private readonly string _cacheFile;
-    private Dictionary<string, CachedRate> _rates;
+    private List<CachedRate> _rates;
 
     public ExchangeRateCache(string excelFilePath)
     {
@@ -19,26 +21,61 @@ public class ExchangeRateCache
         _rates = Load();
     }
 
-    public decimal GetRate(string currency)
+    /// <summary>
+    /// Given a set of transaction dates for one currency, groups them into 60-day windows,
+    /// retrieves or prompts for a rate per window, and returns a lookup: date → BRL rate.
+    /// </summary>
+    public Dictionary<DateTime, decimal> BuildRateLookup(string currency, IEnumerable<DateTime> dates)
     {
         currency = currency.ToUpperInvariant();
+        var lookup = new Dictionary<DateTime, decimal>();
 
-        if (_rates.TryGetValue(currency, out var cached) &&
-            (DateTime.Today - cached.AsOf).TotalDays <= CacheWindowDays)
+        // Sort dates and assign each to a 60-day window anchored at the first date in the group
+        var sorted = dates.OrderBy(d => d).ToList();
+        if (sorted.Count == 0) return lookup;
+
+        var windows = new List<(DateTime start, DateTime end, List<DateTime> txDates)>();
+        DateTime? windowStart = null;
+
+        foreach (var date in sorted)
         {
-            Console.WriteLine($"Using cached {currency}/BRL rate: {cached.Rate} (set on {cached.AsOf:dd/MM/yyyy}, valid for {CacheWindowDays} days).");
+            if (windowStart == null || (date - windowStart.Value).TotalDays > WindowDays)
+            {
+                windowStart = date;
+                windows.Add((date, date.AddDays(WindowDays), new List<DateTime>()));
+            }
+            windows[^1].txDates.Add(date);
+        }
+
+        // For each window, get or prompt for the rate
+        foreach (var (start, end, txDates) in windows)
+        {
+            decimal rate = GetOrPrompt(currency, start, end);
+            foreach (var d in txDates)
+                lookup[d] = rate;
+        }
+
+        return lookup;
+    }
+
+    private decimal GetOrPrompt(string currency, DateTime windowStart, DateTime windowEnd)
+    {
+        var cached = _rates.FirstOrDefault(r =>
+            r.Currency.Equals(currency, StringComparison.OrdinalIgnoreCase) &&
+            r.WindowStart == windowStart &&
+            r.WindowEnd == windowEnd);
+
+        if (cached != null)
+        {
+            Console.WriteLine($"Using cached {currency}/BRL rate {cached.Rate} for window {windowStart:dd/MM/yyyy}–{windowEnd:dd/MM/yyyy}.");
             return cached.Rate;
         }
 
-        return PromptAndSave(currency);
-    }
-
-    private decimal PromptAndSave(string currency)
-    {
+        Console.WriteLine($"\nTransactions in {currency} span {windowStart:dd/MM/yyyy} to {windowEnd:dd/MM/yyyy}.");
         decimal rate = 0;
         while (rate <= 0)
         {
-            Console.Write($"Enter exchange rate for {currency} → BRL (e.g. 6.25): ");
+            Console.Write($"Enter {currency}/BRL exchange rate for this period (e.g. 6.25): ");
             var input = Console.ReadLine()?.Replace(',', '.') ?? "";
             if (!decimal.TryParse(input, System.Globalization.NumberStyles.Any,
                     System.Globalization.CultureInfo.InvariantCulture, out rate) || rate <= 0)
@@ -48,18 +85,24 @@ public class ExchangeRateCache
             }
         }
 
-        _rates[currency] = new CachedRate { Rate = rate, AsOf = DateTime.Today };
+        _rates.Add(new CachedRate
+        {
+            Currency    = currency,
+            WindowStart = windowStart,
+            WindowEnd   = windowEnd,
+            Rate        = rate
+        });
         Save();
         return rate;
     }
 
-    private Dictionary<string, CachedRate> Load()
+    private List<CachedRate> Load()
     {
         if (!File.Exists(_cacheFile)) return new();
         try
         {
             var json = File.ReadAllText(_cacheFile);
-            return JsonSerializer.Deserialize<Dictionary<string, CachedRate>>(json) ?? new();
+            return JsonSerializer.Deserialize<List<CachedRate>>(json) ?? new();
         }
         catch { return new(); }
     }
@@ -72,7 +115,9 @@ public class ExchangeRateCache
 
     private class CachedRate
     {
-        public decimal Rate { get; set; }
-        public DateTime AsOf { get; set; }
+        [JsonPropertyName("currency")]    public string Currency    { get; set; } = "";
+        [JsonPropertyName("windowStart")] public DateTime WindowStart { get; set; }
+        [JsonPropertyName("windowEnd")]   public DateTime WindowEnd   { get; set; }
+        [JsonPropertyName("rate")]        public decimal Rate         { get; set; }
     }
 }

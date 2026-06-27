@@ -7,6 +7,15 @@ public static class QifGenerator
 {
     public static string Generate(IReadOnlyList<Transaction> transactions, ExchangeRateCache rateCache)
     {
+        // Build rate lookups per foreign currency (date → BRL rate)
+        var rateLookups = transactions
+            .Where(t => t.Currency != "BRL")
+            .GroupBy(t => t.Currency)
+            .ToDictionary(
+                g => g.Key,
+                g => rateCache.BuildRateLookup(g.Key, g.Select(t => t.Date))
+            );
+
         var sb = new StringBuilder();
         sb.AppendLine("!Type:Bank");
 
@@ -14,9 +23,9 @@ public static class QifGenerator
         {
             decimal brlAmount = tx.Currency == "BRL"
                 ? tx.Amount
-                : tx.Amount * rateCache.GetRate(tx.Currency);
+                : tx.Amount * rateLookups[tx.Currency][tx.Date];
 
-            // All amounts are debits (positive in Excel = money spent = negative in QIF)
+            // Positive in Excel = debit on card = negative in QIF
             decimal qifAmount = -brlAmount;
 
             string memo = BuildMemo(tx);
@@ -26,7 +35,9 @@ public static class QifGenerator
             sb.AppendLine($"P{tx.Payee}");
             if (!string.IsNullOrEmpty(memo))
                 sb.AppendLine($"M{memo}");
-            sb.AppendLine(BuildCategory(tx));
+            string category = BuildCategory(tx);
+            if (!string.IsNullOrEmpty(category))
+                sb.AppendLine(category);
             sb.AppendLine("^");
         }
 
@@ -39,8 +50,6 @@ public static class QifGenerator
 
         if (tx.Currency != "BRL")
         {
-            // Prepend original foreign amount so it's visible in Money's memo field.
-            // Format matches the Brazilian locale convention: "EUR 5,10"
             string foreignAmount = tx.Amount.ToString("N2", new System.Globalization.CultureInfo("pt-BR"));
             parts.Add($"{tx.Currency} {foreignAmount}");
         }
@@ -53,8 +62,7 @@ public static class QifGenerator
 
     private static string BuildCategory(Transaction tx)
     {
-        // QIF L field: "Category" or "Category:Subcategory"
-        if (!string.IsNullOrEmpty(tx.SubCategory))
+        if (!string.IsNullOrEmpty(tx.Category) && !string.IsNullOrEmpty(tx.SubCategory))
             return $"L{tx.Category}:{tx.SubCategory}";
         if (!string.IsNullOrEmpty(tx.Category))
             return $"L{tx.Category}";
