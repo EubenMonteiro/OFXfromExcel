@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using QifFromExcel;
+using QifFromExcel.Models;
 
 // ─── CONFIGURATION ────────────────────────────────────────────────────────────
 // Full path to the Excel workbook containing the "Money" table.
