@@ -8,7 +8,7 @@ A C# console app that reads an Excel-based financial transaction table and gener
 
 ## Workflow
 
-1. A button in Excel triggers the C# routine
+1. A button (to be aded to an app built in another session) triggers the C# routine
 2. The routine reads all unprocessed rows from the transaction table
 3. It generates an OFX file from those rows
 4. It marks processed rows to prevent duplicate exports
