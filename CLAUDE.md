@@ -30,11 +30,24 @@ A "processed" flag column marks rows already exported to OFX.
 
 ## Multi-Currency Rules
 
-- Default currency: **BRL**
-- If a row has a non-BRL currency (e.g., EUR, USD):
-  - Prepend `"EUR 5,10 "` (or relevant currency + original amount) to the MEMO field
-  - Convert the amount to BRL at a user-supplied exchange rate
-  - Exchange rates are prompted once per ~60-day window and cached; the user is not re-prompted within the same window
+The app supports two account types, selected at runtime:
+
+### BRL accounts
+- All transactions for the chosen card are exported, regardless of currency
+- Non-BRL transactions are converted to BRL using a user-supplied exchange rate
+- The original currency and amount are prepended to the Memo field: `EUR 5,10 - original memo`
+- Output filename: `[Card]yyyyMMdd-HHmm.qif`
+
+### Foreign currency accounts (EUR, USD, etc.)
+- Only transactions matching the account currency are exported; others are skipped with a warning
+- Amounts are exported as-is — no conversion, no memo prefix
+- Output filename: `[Card] - [Currency] - yyyyMMdd-HHmm.qif`
+- If the card name ends with a 3-letter currency code (e.g. `Avenue USD`), the currency is detected automatically and the user is not prompted
+
+### Exchange rate caching
+- Rates are grouped into 60-day windows anchored on transaction dates (looking backwards)
+- The user is prompted once per currency per window; the rate is reused for all transactions in that window
+- Rates are cached in `<ExcelFile>.rates.json` next to the workbook, storing `{currency, windowStart, windowEnd, rate}`
 
 ## OFX Format Reference (v1.x SGML)
 
